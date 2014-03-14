@@ -1,0 +1,97 @@
+usage="$(basename "$0") {file} [-h|-?|--help] [-e=[diff]] [-L=[n]] 
+
+program to show or export the diff of a file
+
+where:
+    -h  show this help text
+    -e  export the diff to a file instead of showing it
+    -i  generate the diff based on the last change of a line
+    "
+
+declare -i ac
+ac=0
+
+check_for_option_tag() {
+    case "$1" in
+        "h" | "-help" | "?")
+            echo "$usage"
+            exit 0
+        ;;
+        "e")
+            diffFile="$2"
+        ;;
+        "L")
+            lineNumber="$2"
+        ;;
+        *)
+            echo "invalid option \"$1\"."
+            echo ""
+            echo "$usage"
+            exit 1
+        ;;
+    esac
+}
+
+while [[ $# -ne 0 ]] ; do
+    if [[ $1 =~ ^- ]] ; then
+        tag=$1
+        tag=${tag:1}
+        if [[ "${#tag}" == 1 ]] || [[ $tag =~ ^- ]] ; then
+            shift
+            if [[ $1 =~ ^- ]] ; then
+                check_for_option_tag $tag
+            else
+                check_for_option_tag $tag $1
+                shift
+            fi
+        else
+            while test -n "$tag"; do
+               c=${tag:0:1} 
+               check_for_option_tag $c
+               tag=${tag:1}
+            done
+            shift
+        fi
+    else
+        case $ac in
+            0)
+                file=$1
+            ;;
+            *)
+                echo "invalid amount of parameters. (+$ac)"
+                echo ""
+                echo "$usage"
+                exit 1
+            ;;
+        esac
+        ac=$ac+1
+        shift
+    fi
+done
+
+if [[ -z "$file" ]] ; then
+    echo "Please specify the argument {file}."
+    echo ""
+    echo "$usage"
+    exit 1
+fi
+
+revPath=$(git rev-parse --show-toplevel)
+original=$file
+file=${PWD:${#revPath}+1}/${file##*[/|\\]}
+
+output() {
+    if [[ -z "$diffFile" ]] ; then
+        echo "$1"
+    else
+        echo "$1" >> "$diffFile"
+    fi
+}
+
+if [[ -z "$lineNumber" ]] ; then
+    ids=$(git log -n 2 --pretty=format:%h -- "$file")
+    output "$(git diff $(echo $ids | cut -d " " -f 1):$file $(echo $ids | cut -d " " -f 2):$file)"
+else
+    id=$(echo $(git blame $original -L $lineNumber,+1 HEAD) | cut -d " " -f 1)
+    output "$(git diff $id -- $file)"
+fi
